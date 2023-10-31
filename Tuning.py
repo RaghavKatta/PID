@@ -250,3 +250,6 @@ if st.button("Generate Best PID"):
     st.text(min_score)
     st.text(start_time-end_time)
 
+##so far this code can run the brute force with 100 values of KP, 50 for Ki and KD, with 100 num points in 80 ish seconds. 
+##if we can speed this up 100x that'd be fire, or we could try better hueristics like get it to refine its search by
+##inputting better mins and maxes to get a prediction with more decimals, also if we speed up the actual checking and score calcs
