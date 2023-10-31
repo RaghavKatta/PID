@@ -192,5 +192,61 @@ calcs = make_calculations(x_range, Kp, Ki, Kd, seconds_delay, Disturbance, x_poi
 st.text([("max_overshoot: " + str(calcs[0]-1)), ("time constant: " + str(calcs[1]))])
 st.text([("steady_state_value: " + str(calcs[2]-1)), ("steady_state_time: " + str(calcs[3]/x_points))])
 
-def get_score():
-    return (calcs(0)-1)
+
+def get_score(overshoot, tc, steady_state_value, steady_state_time):
+    #WE GONNA SCORE EVERYTHING OUTTA 25, BUT IF IT'S UNUSEABLY BAD WE WILL SET AT
+    #1000 SO IT WILL BASICALLY BE DISREGARDED, lower scores are better
+    overshoot_score = 0
+    if overshoot > .5 or overshoot < -.5:
+        return 1000
+    else: 
+        #lets make it proportional to overshoot squared cause that's hella imp
+        overshoot_score = overshoot**2
+
+    time_constant_score = 0
+    if tc > .5:
+        return 1000
+    else:
+        time_constant_score = tc
+
+    steady_state_value_score = 0
+    if steady_state_value > .4:
+        return 1000
+    else:
+        steady_state_value_score = steady_state_value**2
+
+    steady_state_time_constant = 0
+    if steady_state_time > 1:
+        return 1000
+    else:
+        steady_state_time_constant = steady_state_time
+
+    #we multiply smth to kinda standardize these values and their effects on overall score
+    #I tried selecting them based on making a p decent case 2.5
+    #ie overshoot 10% would get overshoot_score .01
+    return overshoot_score * 250 + time_constant_score * 50 + steady_state_value_score * 250 + steady_state_time_constant * 5
+
+st.text(get_score(calcs[0]-1, calcs[1]/(x_end-x_start), calcs[2]-1, calcs[3]/x_points * (x_end-x_start)))
+
+start_time = time.time()
+
+if st.button("Generate Best PID"):
+    min_score = 1000
+    best_vals = []
+    for p in range(0, 100, 1):
+        Kp_tune = p
+        for i in range(0, 100, 2):
+            Ki_tune = i
+            for d in range(0,100, 2):
+                Kd_tune = d/100
+                tuning_calcs = make_calculations(x_range, Kp_tune, Ki_tune, Kd_tune, seconds_delay, Disturbance, x_points)
+                score = get_score(tuning_calcs[0]-1, tuning_calcs[1]/(x_end-x_start), tuning_calcs[2]-1, tuning_calcs[3]/x_points * (x_end-x_start))
+                if score < min_score:
+                    min_score = score
+                    best_vals = [Kp_tune, Ki_tune, Kd_tune]
+    end_time = time.time()
+
+    st.text(best_vals)
+    st.text(min_score)
+    st.text(start_time-end_time)
+
