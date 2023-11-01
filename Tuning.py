@@ -59,7 +59,7 @@ with col3:
 with col4:
     seconds_delay = st.number_input('Milliseconds', min_value=0, max_value=1000, value=10)
 
-def equation2(x, P, I, D, delay, disturbance, mass):
+def equation2(x, P, I, D, delay, disturbance, mass, max_force):
     # PID control logic with fixed parameters
     Kp = P  # Proportional Gain
     Ki = I  # Integral Gain
@@ -70,7 +70,7 @@ def equation2(x, P, I, D, delay, disturbance, mass):
     integral = 0
     prev_error = setpoint - y
     dt = x[1] - x[0]
-
+    at_max_force = False
     # Time delay settings
     #the actual delay in seconds
     seconds_delay = delay/1000
@@ -82,11 +82,18 @@ def equation2(x, P, I, D, delay, disturbance, mass):
     current_velocity = 0
     for t in x[1::]:
         #Now we have to fix the issue of max force
-        integral += error * dt
+        #Prevent windup by locking integral
+        if not at_max_force:
+            integral += error * dt
         derivative = (error - prev_error) / dt
 
         # Control signal calculation
         control_signal = Kp * error + Ki * integral + Kd * derivative
+        if control_signal > max_force:
+            control_signal = max_force
+            at_max_force = True
+        elif at_max_force:
+            at_max_force = False
         control_signal_history.append(control_signal)
         delayed_control_signal = control_signal_history.pop(0)
         current_velocity += (delayed_control_signal+disturbance)*dt/mass
@@ -99,7 +106,7 @@ def equation2(x, P, I, D, delay, disturbance, mass):
 
     return y_values
 
-y_values2 = equation2(x_range, Kp, Ki, Kd, seconds_delay, Disturbance, Mass)
+y_values2 = equation2(x_range, Kp, Ki, Kd, seconds_delay, Disturbance, Mass, Max_Force)
 # Create a Matplotlib figure and plot the data
 #hella customization cause why not, let's ball
 fig, ax = plt.subplots()
@@ -132,7 +139,7 @@ def within_range(start, points_considered, y_values, threshold):
     
     return False
 
-def make_calculations(x, P, I, D, delay, disturbance, num_points, mass):
+def make_calculations(x, P, I, D, delay, disturbance, num_points, mass, max_force):
     ## CALCULATE Y VALUES
     # PID control logic with fixed parameters
     Kp = P  # Proportional Gain
@@ -144,7 +151,7 @@ def make_calculations(x, P, I, D, delay, disturbance, num_points, mass):
     integral = 0
     prev_error = setpoint - y
     dt = x[1] - x[0]
-
+    at_max_force = False
     # Time delay settings
     #the actual delay in seconds
     seconds_delay = delay/1000
@@ -153,14 +160,21 @@ def make_calculations(x, P, I, D, delay, disturbance, num_points, mass):
     control_signal_history = [0] * time_delay
 
     y_values = [0]  # Store the time series of y values
-
     current_velocity = 0
     for t in x[1::]:
-        integral += error * dt
+        #Now we have to fix the issue of max force
+        #Prevent windup by locking integral
+        if not at_max_force:
+            integral += error * dt
         derivative = (error - prev_error) / dt
 
         # Control signal calculation
         control_signal = Kp * error + Ki * integral + Kd * derivative
+        if control_signal > max_force:
+            control_signal = max_force
+            at_max_force = True
+        elif at_max_force:
+            at_max_force = False
         control_signal_history.append(control_signal)
         delayed_control_signal = control_signal_history.pop(0)
         current_velocity += (delayed_control_signal+disturbance)*dt/mass
@@ -194,7 +208,7 @@ def make_calculations(x, P, I, D, delay, disturbance, num_points, mass):
 
     return max_overshoot, time/num_points, steady_state_value, steady_state_time
 
-calcs = make_calculations(x_range, Kp, Ki, Kd, seconds_delay, Disturbance, x_points, Mass)
+calcs = make_calculations(x_range, Kp, Ki, Kd, seconds_delay, Disturbance, x_points, Mass, Max_Force)
 st.text([("max_overshoot: " + str(calcs[0]-1)), ("time constant: " + str(calcs[1]/(x_end-x_start)))])
 st.text([("steady_state_value: " + str(calcs[2]-1)), ("steady_state_time: " + str(calcs[3]/x_points * (x_end-x_start)))])
 
@@ -239,7 +253,7 @@ def generate_best(Kpi, Kpf, Kpg, Kii, Kif, Kig, Kdi, kdf, Kdg):
             Ki_tune = i/100
             for d in range(Kdi, kdf, Kdg):
                 Kd_tune = d/100
-                tuning_calcs = make_calculations(x_range, Kp_tune, Ki_tune, Kd_tune, seconds_delay, Disturbance/Mass, x_points, 1)
+                tuning_calcs = make_calculations(x_range, Kp_tune, Ki_tune, Kd_tune, seconds_delay, Disturbance/Mass, x_points, 1, Max_Force/Mass)
                 score = get_score(tuning_calcs[0]-1, tuning_calcs[1]/(x_end-x_start), tuning_calcs[2]-1, tuning_calcs[3]/x_points * (x_end-x_start))
                 if score < min_score:
                     min_score = score
@@ -324,4 +338,3 @@ if st.button("Generate BETTER PID (Precise!!)(4-5)"):
     end_time = time.time()
     st.text("extra precise estimate: " + str(extra_precise_estimate[0]) + " Mass adjusted estimate: " + str(extra_precise_estimate[1]) + " Score: " + str(extra_precise_estimate[2]))
     st.text("time: " + str(end_time-start_time))
-
