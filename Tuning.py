@@ -42,17 +42,18 @@ col1, col2, col3, col4 = st.columns(4)
 
 # Input fields in the first column
 with col1:
-    Kp = st.number_input('Kp', min_value=0.0, max_value=100.0, value=1.0, step=0.01)
-    Disturbance = st.number_input("Disturbance", min_value= -1.00, max_value = 1.0, value = 0.0, step = .0001, format="%.4f")
+    Kp = st.number_input('Kp', min_value=0.0, max_value=10000000.0, value=1.0, step=0.01)
+    Disturbance = st.number_input("Disturbance", min_value= -1000.00, max_value = 1000.0, value = 0.0, step = .0001, format="%.4f")
 
 # Input fields in the second column
 with col2:
-    Ki = st.number_input('Ki', min_value=0.0, max_value=100.0, value=0.0, step=0.01)
-    Mass = st.number_input("Mass(kg)", min_value = .01, max_value = 100.00, step = .01)
+    Ki = st.number_input('Ki', min_value=0.0, max_value=10000000.0, value=0.0, step=0.01)
+    Mass = st.number_input("Mass(kg)", min_value = 1.0, max_value = 100.00, step = .01)
 
 # Input fields in the third column
 with col3:
-    Kd = st.number_input('Kd', min_value=0.0, max_value=100.0, value=0.0, step=0.01)
+    Kd = st.number_input('Kd', min_value=0.0, max_value=10000000.0, value=0.0, step=0.001, format="%.3f")
+    Max_Force = st.number_input("Max Force(N)", min_value = .1, max_value = 100000.00, value = 100.0 ,step = .1)
 
 # Input fields in the fourth column
 with col4:
@@ -80,6 +81,7 @@ def equation2(x, P, I, D, delay, disturbance, mass):
     y_values = [0]  # Store the time series of y values
     current_velocity = 0
     for t in x[1::]:
+        #Now we have to fix the issue of max force
         integral += error * dt
         derivative = (error - prev_error) / dt
 
@@ -140,7 +142,7 @@ def make_calculations(x, P, I, D, delay, disturbance, num_points, mass):
     y = 0
     error = setpoint - y
     integral = 0
-    prev_error = 0
+    prev_error = setpoint - y
     dt = x[1] - x[0]
 
     # Time delay settings
@@ -193,24 +195,19 @@ def make_calculations(x, P, I, D, delay, disturbance, num_points, mass):
     return max_overshoot, time/num_points, steady_state_value, steady_state_time
 
 calcs = make_calculations(x_range, Kp, Ki, Kd, seconds_delay, Disturbance, x_points, Mass)
-st.text([("max_overshoot: " + str(calcs[0])), ("time constant: " + str(calcs[1]/(x_end-x_start)))])
-st.text([("steady_state_value: " + str(calcs[2])), ("steady_state_time: " + str(calcs[3]/x_points * (x_end-x_start)))])
+st.text([("max_overshoot: " + str(calcs[0]-1)), ("time constant: " + str(calcs[1]/(x_end-x_start)))])
+st.text([("steady_state_value: " + str(calcs[2]-1)), ("steady_state_time: " + str(calcs[3]/x_points * (x_end-x_start)))])
 
 def get_score(overshoot, tc, steady_state_value, steady_state_time):
     #WE GONNA SCORE EVERYTHING OUTTA 25, BUT IF IT'S UNUSEABLY BAD WE WILL SET AT
     #1000 SO IT WILL BASICALLY BE DISREGARDED, lower scores are better
     overshoot_score = 0
-    if overshoot > .5 or overshoot < -.5:
-        return 1000
-    else: 
-        #lets make it proportional to overshoot squared cause that's hella imp
-        overshoot_score = overshoot**2
+    
+    #lets make it proportional to overshoot squared cause that's hella imp
+    overshoot_score = overshoot**2
 
-    time_constant_score = 0
-    if tc > .5:
-        return 1000
-    else:
-        time_constant_score = tc
+
+    time_constant_score = tc
 
     steady_state_value_score = 0
     if steady_state_value > .4:
@@ -219,7 +216,7 @@ def get_score(overshoot, tc, steady_state_value, steady_state_time):
         steady_state_value_score = steady_state_value**2
 
     steady_state_time_constant = 0
-    if steady_state_time > 1 or steady_state_time < 0:
+    if steady_state_time < 0:
         return 1000
     else:
         steady_state_time_constant = steady_state_time
@@ -237,28 +234,31 @@ def generate_best(Kpi, Kpf, Kpg, Kii, Kif, Kig, Kdi, kdf, Kdg):
     min_score = 1000
     best_vals = []
     for p in range(Kpi, Kpf, Kpg):
-        Kp_tune = p/10
+        Kp_tune = p/100
         for i in range(Kii, Kif, Kig):
-            Ki_tune = i/10
+            Ki_tune = i/100
             for d in range(Kdi, kdf, Kdg):
-                Kd_tune = d/1000
-                tuning_calcs = make_calculations(x_range, Kp_tune, Ki_tune, Kd_tune, seconds_delay, Disturbance, x_points, Mass)
+                Kd_tune = d/100
+                tuning_calcs = make_calculations(x_range, Kp_tune, Ki_tune, Kd_tune, seconds_delay, Disturbance/Mass, x_points, 1)
                 score = get_score(tuning_calcs[0]-1, tuning_calcs[1]/(x_end-x_start), tuning_calcs[2]-1, tuning_calcs[3]/x_points * (x_end-x_start))
                 if score < min_score:
                     min_score = score
                     best_vals = [Kp_tune, Ki_tune, Kd_tune]
-
-    return best_vals, min_score
+    raw_vals = best_vals.copy()
+    for i in range(len(best_vals)):
+        best_vals[i] = best_vals[i] * Mass
+    return raw_vals, best_vals, min_score
     
 
-if st.button("Generate Best PID (Rough Estimate Version)(per 10)"):
+if st.button("Generate Best PID (Rough Estimate Version)(1-2 digits)"):
     start_time = time.time()
-    rough_estimate = generate_best(0, 1000, 100, 0, 1000, 100, 0, 2000, 100)
+    rough_estimate = generate_best(0, 10000, 1000, 0, 10000, 1000, 0, 100000, 1000)
     end_time = time.time()
-    st.text(rough_estimate)
+    st.text("if any of the raw estimate values are 100 then something might be wrong, tell raghav if you run into it")
+    st.text("raw estimate: " + str(rough_estimate[0]) + " Mass adjusted estimate: " + str(rough_estimate[1]) + " Score: " + str(rough_estimate[2]))
     st.text("time: " + str(end_time-start_time))
 
-st.header("Enter PID rough estimates")
+st.header("Enter PID rough estimates(raw)(1-2)")
 # Create a layout with four columns
 col1, col2, col3 = st.columns(3)
 
@@ -272,16 +272,16 @@ with col2:
 
 # Input fields in the third column
 with col3:
-    Kd_rough = st.number_input('Kd_rough(*100)', min_value=0, max_value=100, value=0, step=1)
+    Kd_rough = st.number_input('Kd_rough', min_value=0, max_value=100, value=0, step=1)
 
-if st.button("Generate Best PID (Acceptable)(per 1)"):
+if st.button("Generate Best PID (Acceptable)(2-3)"):
     start_time = time.time()
-    accurate_estimate = generate_best((Kp_rough-10)*10, (Kp_rough+10)*10, 10, (Ki_rough-10)*10, (Ki_rough+10)*10, 10, (Kd_rough -10)*10, (Kd_rough +10)*10, 10)
+    accurate_estimate = generate_best(max(0,(Kp_rough-10)*100), (Kp_rough+10)*100, 100, max(0,(Ki_rough-10)*100), (Ki_rough+10)*100, 100, max(0,(Kd_rough -10)*100), (Kd_rough +10)*100, 100)
     end_time = time.time()
-    st.text(accurate_estimate)
+    st.text("accurate estimate: " + str(accurate_estimate[0]) + " Mass adjusted estimate: " + str(accurate_estimate[1]) + " Score: " + str(accurate_estimate[2]))
     st.text("time: " + str(end_time-start_time))
 
-st.header("Enter PID acceptable estimates")
+st.header("Enter PID acceptable estimates(raw)")
 # Create a layout with four columns
 col1, col2, col3 = st.columns(3)
 
@@ -295,12 +295,33 @@ with col2:
 
 # Input fields in the third column
 with col3:
-    Kd_accurate = st.number_input('Kd_accurate(*100)', min_value=0, max_value=100, value=0, step=1)
+    Kd_accurate = st.number_input('Kd_accurate', min_value=0, max_value=100, value=0, step=1)
 
-if st.button("Generate Best PID (Precise!!)(per .1)"):
+if st.button("Generate Better PID (Precise!)(3-4)"):
     start_time = time.time()
-    precise_estimate = generate_best((Kp_accurate-1)*10, (Kp_accurate+1)*10, 1, (Ki_accurate-1)*10, (Ki_accurate+1)*10, 1, (Kd_accurate -1)*10, (Kd_accurate +1)*10, 1)
+    precise_estimate = generate_best(max((Kp_accurate-1)*100,0), (Kp_accurate+1)*100, 10, max(0,(Ki_accurate-1)*100), (Ki_accurate+1)*100, 10, max(0,(Kd_accurate -1)*100), (Kd_accurate +1)*100, 10)
     end_time = time.time()
-    st.text(precise_estimate)
+    st.text("precise estimate: " + str(precise_estimate[0]) + " Mass adjusted estimate: " + str(precise_estimate[1]) + " Score: " + str(precise_estimate[2]))
+    st.text("time: " + str(end_time-start_time))
+
+st.header("Enter PID precision estimates(raw)")
+# Create a layout with four columns
+col1, col2, col3 = st.columns(3)
+with col1:
+    Kp_precise = st.number_input('Kp_precision', min_value=0.0, max_value=100.0, value=1.0, step=.1)
+    
+# Input fields in the second column
+with col2:
+    Ki_precise = st.number_input('Ki_precision', min_value=0.0, max_value=100.0, value=0.0, step=.1)
+
+# Input fields in the third column
+with col3:
+    Kd_precise = st.number_input('Kd_precision', min_value=0.0, max_value=100.0, value=0.0, step=.1)
+
+if st.button("Generate BETTER PID (Precise!!)(4-5)"):
+    start_time = time.time()
+    extra_precise_estimate = generate_best(max(int((Kp_precise - .1) * 100.0), 0), int((Kp_precise + .1) * 100.0), 1, max(0, int((Ki_precise - .1) * 100.0)), int((Ki_precise + .1) * 100.0), 1, max(0, int((Kd_precise - .1) * 100.0)), int((Kd_precise + .1) * 100.0), 1)
+    end_time = time.time()
+    st.text("extra precise estimate: " + str(extra_precise_estimate[0]) + " Mass adjusted estimate: " + str(extra_precise_estimate[1]) + " Score: " + str(extra_precise_estimate[2]))
     st.text("time: " + str(end_time-start_time))
 
