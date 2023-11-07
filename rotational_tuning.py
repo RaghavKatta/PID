@@ -43,7 +43,7 @@ col1, col2, col3, col4 = st.columns(4)
 # Input fields in the first column
 with col1:
     Kp = st.number_input('Kp', min_value=0.0, max_value=10000000.0, value=1.0, step=0.01)
-    Disturbance = st.number_input("Disturbance", min_value= -1000.00, max_value = 1000.0, value = 0.0, step = .0001, format="%.4f")
+    Disturbance = st.number_input("Disturbance (Units NM)", min_value= -1000.00, max_value = 1000.0, value = 0.0, step = .0001, format="%.4f")
 
 # Input fields in the second column
 with col2:
@@ -97,6 +97,8 @@ def equation2(x, P, I, D, delay, disturbance, mass, max_force):
             at_max_force = False
         control_signal_history.append(control_signal)
         delayed_control_signal = control_signal_history.pop(0)
+        #disturbance is treated as a force with the units N if translational 
+        #for rotational is treated as a torque with units NM
         current_velocity += (delayed_control_signal+disturbance)*dt/mass
         #control signal and disturbance are meant to force so this is where we have to account for force
         y = y_values[-1] + current_velocity * dt  # Assuming y represents the system output
@@ -347,8 +349,10 @@ inertia_difference = inertia_end - inertia_start
 #initalize the points for this rn
 seconds_delay_plot = st.number_input('Delay Plot', min_value=0, max_value=1000, value=10)
 Disturbance_plot = st.number_input("Disturbance Plot", min_value= -1000.00, max_value = 1000.0, value = 0.0, step = .0001, format="%.4f")
-inertia_range = np.linspace(0, 7, 28)
-
+inertia_points = 28
+inertia_range = np.linspace(0, 7, inertia_points)
+inertia_calc_points = 100
+inertia_calc_range = np.linspace(0, 7, inertia_calc_points)
 #here we have to use the code for inertia and thrust though(no fun inserts)
 def Inertia(time):
     # time in ms
@@ -444,6 +448,7 @@ with col2:
     axis.set_xlim(0,7)
     st.pyplot(display)
 
+
 @st.cache_data
 def generate_best_plot(Kpi, Kpf, Kpg, Kii, Kif, Kig, Kdi, kdf, Kdg, mass, max_force):
     #we divide by 10 for Kp and Ki so that when we do the precise one we can use decimals
@@ -455,8 +460,8 @@ def generate_best_plot(Kpi, Kpf, Kpg, Kii, Kif, Kig, Kdi, kdf, Kdg, mass, max_fo
             Ki_tune = i/100
             for d in range(Kdi, kdf, Kdg):
                 Kd_tune = d/100
-                tuning_calcs = make_calculations(inertia_range, Kp_tune, Ki_tune, Kd_tune, seconds_delay_plot, Disturbance_plot/mass, x_points, 1, max_force/mass)
-                score = get_score(tuning_calcs[0]-1, tuning_calcs[1]/(x_end-x_start), tuning_calcs[2]-1, tuning_calcs[3]/x_points * (x_end-x_start))
+                tuning_calcs = make_calculations(inertia_calc_range, Kp_tune, Ki_tune, Kd_tune, seconds_delay, Disturbance_plot/mass, inertia_calc_points, 1, max_force/mass)
+                score = get_score(tuning_calcs[0]-1, tuning_calcs[1]/(7), tuning_calcs[2]-1, tuning_calcs[3]/x_points * (7))
                 if score < min_score:
                     min_score = score
                     best_vals = [Kp_tune, Ki_tune, Kd_tune]
@@ -464,6 +469,8 @@ def generate_best_plot(Kpi, Kpf, Kpg, Kii, Kif, Kig, Kdi, kdf, Kdg, mass, max_fo
     for i in range(len(best_vals)):
         best_vals[i] = best_vals[i] * mass
     return raw_vals, best_vals, min_score
+
+
 
 @st.cache_data
 def generate_best_pid(inertia_vals, thrust_vals):
@@ -475,6 +482,7 @@ def generate_best_pid(inertia_vals, thrust_vals):
         inertia_plot = inertia_vals[x]
         thrust_plot = thrust_vals[x]
         rough_estimate = generate_best_plot(0, 10000, 1000, 0, 10000, 1000, 0, 100000, 1000, inertia_plot, thrust_plot)
+        print(rough_estimate)
         P_values_plot.append(rough_estimate[1][0])
         I_values_plot.append(rough_estimate[1][1])
         D_values_plot.append(rough_estimate[1][2])
@@ -482,6 +490,8 @@ def generate_best_pid(inertia_vals, thrust_vals):
 
     return P_values_plot, I_values_plot, D_values_plot, min_scores_plot
 
+if st.button("Recalculate"):
+    st.cache_data.clear()
 
 st.title("PID overtime")
 start_time = time.time()
@@ -493,6 +503,7 @@ P_values_plot = []
 end_time = time.time()
 st.text(PID_values_plot[0])
 P_values_plot = PID_values_plot[0]
+st.text("this is time taken")
 st.text(end_time-start_time)
 #rough_estimate = generate_best_plot(0, 10000, 1000, 0, 10000, 1000, 0, 100000, 1000, 10, 1000)
 pid_axis.plot(inertia_range, P_values_plot, label = 'P', color = 'blue')
@@ -531,4 +542,6 @@ st.text(end_time-start_time)
 pid_axis.plot(inertia_range, score_values_plot, label = 'Score', color = 'white')
 pid_axis.set_xlim(0,7)
 st.pyplot(pid_display)
+
+
 
